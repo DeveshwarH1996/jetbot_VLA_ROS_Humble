@@ -4,7 +4,7 @@
   <name>jetbot_vla_bridge</name>
   <version>0.1.0</version>
   <description>Bridge node that queries a remote VLA server with camera frames and publishes proposed twists.</description>
-  <maintainer email="deveshwarh@gmail.com">srinivas</maintainer>
+  <maintainer email="deveshwarh@gmail.com">Deveshwar</maintainer>
   <license>MIT</license>
 
   <depend>rclpy</depend>

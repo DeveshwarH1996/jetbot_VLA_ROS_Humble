@@ -21,22 +21,37 @@ class VLAClientBridge(Node):
         self.declare_parameter('inference_rate_hz', 1.0)
         self.declare_parameter('task', 'Navigate to target and stop')
         self.declare_parameter('request_timeout', 2.0)
+        self.declare_parameter('publish_rate_hz', 10.0)
+        self.declare_parameter('command_max_age', 3.0)
 
         self.server_url = self.get_parameter('server_url').get_parameter_value().string_value
         rate_hz = self.get_parameter('inference_rate_hz').get_parameter_value().double_value
-        self.interval = 1.0 / rate_hz
+        self.inference_interval = 1.0 / rate_hz
         self.task = self.get_parameter('task').get_parameter_value().string_value
         self.request_timeout = self.get_parameter(
             'request_timeout').get_parameter_value().double_value
+        publish_rate_hz = self.get_parameter('publish_rate_hz').get_parameter_value().double_value
+        self.publish_interval = 1.0 / publish_rate_hz
+        self.command_max_age = self.get_parameter(
+            'command_max_age').get_parameter_value().double_value
 
         self.bridge = CvBridge()
         self.last_frame = None
+        self.last_twist = Twist()
+        self.last_action_time = None
 
         self.pub = self.create_publisher(Twist, '/cmd_vel_vla', 10)
         self.sub = self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
 
-        # Timer for inference to avoid saturating the server
-        self.timer = self.create_timer(self.interval, self.inference_loop)
+        # VLA inference is slow (server round-trip), so it runs on its own
+        # timer. Downstream consumers (predictive_governor -> twist_mux ->
+        # motor_driver's heartbeat watchdog) all expect a steady stream of
+        # commands though, so a separate faster timer republishes the last
+        # decision - decoupling "how often the VLA re-plans" from "how often
+        # we publish a command". If no fresh decision has arrived within
+        # command_max_age, we publish zero instead of a stale command.
+        self.inference_timer = self.create_timer(self.inference_interval, self.inference_loop)
+        self.publish_timer = self.create_timer(self.publish_interval, self.publish_loop)
 
         self.get_logger().info(f"VLA Client Bridge initialized. Server: {self.server_url}")
 
@@ -66,14 +81,14 @@ class VLAClientBridge(Node):
                 self.get_logger().warn(f"Server error: {response.status_code}")
 
         except requests.exceptions.RequestException as e:
-            # Server down or slow: publish nothing new. predictive_governor's
-            # scan-timeout / twist_mux's per-topic timeout are what actually
-            # stop the robot when this bridge goes quiet.
+            # Server down or slow: leave last_twist as-is. publish_loop's
+            # command_max_age check is what stops the robot if this
+            # persists, not a missing message on /cmd_vel_vla.
             self.get_logger().error(f"Inference loop failure: {e}")
 
     def map_tokens_to_twist(self, tokens):
         """
-        Maps VLA discrete tokens to physical velocity.
+        Map the VLA's discrete action tokens to a velocity command.
         Example mapping: 'move_fwd' -> linear.x = 0.2, 'turn_l' -> angular.z = 0.5
         """
         if not tokens:
@@ -92,7 +107,15 @@ class VLAClientBridge(Node):
         elif token == 'stop':
             pass  # zero twist
 
-        self.pub.publish(twist)
+        self.last_twist = twist
+        self.last_action_time = self.get_clock().now()
+
+    def publish_loop(self):
+        if self.last_action_time is None:
+            return  # no VLA decision yet
+
+        age = (self.get_clock().now() - self.last_action_time).nanoseconds / 1e9
+        self.pub.publish(self.last_twist if age <= self.command_max_age else Twist())
 
 
 def main(args=None):
