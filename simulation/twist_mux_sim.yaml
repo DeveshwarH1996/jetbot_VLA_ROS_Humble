@@ -1,0 +1,5 @@
+# Superseded: this file used an invalid twist_mux schema (a bare list of
+# topic name strings) that the real ros-humble-twist-mux node cannot parse.
+# The working config is now at:
+#   ros_ws/src/jetbot_base/config/twist_mux.yaml
+# and is loaded by ros_ws/src/jetbot_base/launch/bringup.launch.py.
