@@ -3,9 +3,9 @@
 <package format="3">
   <name>jetbot_vision</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Camera capture and on-device vision (TensorRT YOLO) for the JetBot.</description>
   <maintainer email="deveshwarh@gmail.com">Deveshwar</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>

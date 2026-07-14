@@ -3,9 +3,9 @@
 <package format="3">
   <name>jetbot_base</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Motor control, odometry, and teleop for the Waveshare JetBot AI Kit.</description>
   <maintainer email="deveshwarh@gmail.com">Deveshwar</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>

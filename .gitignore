@@ -3,6 +3,7 @@ ros_ws/install/
 ros_ws/log/
 __pycache__/
 *.pyc
+.pytest_cache/
 *.engine
 *.pt
 .vscode/
