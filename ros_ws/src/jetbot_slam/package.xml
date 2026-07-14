@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>jetbot_slam</name>
+  <version>0.1.0</version>
+  <description>
+    Camera-based SLAM for JetBot using RTAB-Map. Monocular RTAB-Map can only
+    do appearance-based loop-closure detection, not independent metric
+    mapping - metric scale comes from jetbot_base's odometry (currently
+    open-loop/dead-reckoning, since the Waveshare kit has no wheel
+    encoders). Real occupancy-grid obstacle mapping for Nav2 still requires
+    the planned LiDAR or a depth camera; this package gives visual
+    localization/loop-closure only.
+  </description>
+  <maintainer email="deveshwarh@gmail.com">Deveshwar</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>rtabmap_launch</exec_depend>
+  <exec_depend>rtabmap_odom</exec_depend>
+  <exec_depend>rtabmap_slam</exec_depend>
+  <exec_depend>rtabmap_conversions</exec_depend>
+  <exec_depend>rtabmap_sync</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
