@@ -15,6 +15,17 @@ mono VO, which would drift badly on its own).
 This gives visual localization / loop closure, NOT an obstacle-aware
 occupancy grid for Nav2 - that still needs the planned LiDAR or a depth
 camera.
+
+PREREQUISITES this launch file does NOT start itself:
+  - jetbot_description's robot_state_publisher (with the URDF loaded) must
+    already be running, so the static base_footprint->chassis->camera_link
+    TF chain exists. Without it, rtabmap fails per-frame with "camera_link
+    passed to lookupTransform ... does not exist".
+  - jetbot_base's motor_driver must be running (publishes /odom and
+    broadcasts odom->base_footprint TF).
+  - A camera node (real camera_node or jetbot_vision's mock_camera_publisher)
+    must be publishing camera/image_raw + camera/camera_info.
+Verified end-to-end against the mock camera + motor_driver + robot_state_publisher.
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
@@ -41,6 +52,9 @@ def generate_launch_description():
                 'localization': LaunchConfiguration('localization'),
 
                 'frame_id': 'base_footprint',
+                # Setting odom_frame_id makes rtabmap read odometry from TF
+                # (odom->base_footprint, broadcast by motor_driver) instead
+                # of the /odom topic directly - odom_topic is then unused.
                 'odom_frame_id': 'odom',
                 'map_frame_id': 'map',
 
@@ -48,22 +62,27 @@ def generate_launch_description():
                 # loop-closure only, not its own (unreliable-without-depth)
                 # monocular visual odometry.
                 'visual_odometry': 'false',
-                'odom_topic': '/odom',
 
                 'rgb_topic': '/camera/image_raw',
                 'camera_info_topic': '/camera/camera_info',
-                'subscribe_depth': 'false',
+                'depth': 'false',        # no depth sensor - this is the real arg name, NOT subscribe_depth
+                # subscribe_rgb defaults to whatever 'depth' is (see rtabmap_launch source),
+                # so it must be set explicitly here or nothing subscribes to the camera at all.
+                'subscribe_rgb': 'true',
                 'subscribe_rgbd': 'false',
                 'subscribe_scan': 'false',  # no LiDAR yet
 
                 'approx_sync': 'true',
                 'qos': '2',
 
-                # Ground robot constrained to the XY plane + yaw: this
-                # matters a lot for a wheeled robot's pose graph quality.
-                'rtabmap_args': '--Reg/Force3DoF true --Vis/MinInliers 15',
+                # Ground robot constrained to the XY plane + yaw, and
+                # RGBD/Enabled=false selects RTAB-Map's "loop closure on
+                # images-only" mode (its own suggestion when no
+                # depth/stereo/rgbd is subscribed) instead of full RGB-D SLAM.
+                'rtabmap_args': '--Reg/Force3DoF true --Vis/MinInliers 15 --RGBD/Enabled false',
 
                 'rviz': 'false',
+                'rtabmap_viz': 'false',  # separate GUI from rviz; also off for headless/automated runs
             }.items(),
         ),
     ])
