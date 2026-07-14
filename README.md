@@ -13,6 +13,8 @@ flowchart TB
     end
 
     subgraph JETSON["Jetson Nano — reactive control"]
+        JOYDEV["joy_node<br/>(ros-humble-joy)"]
+        JOYCTL["joy_controller<br/>mode: vla/manual/traditional<br/>(jetbot_base)"]
         CAM["camera_node /<br/>mock_camera_publisher<br/>(jetbot_vision)"]
         YOLO["yolo_detector /<br/>mock_detection_publisher<br/>(jetbot_vision)"]
         PROJ["ground_plane_projector<br/>(jetbot_nav)"]
@@ -20,30 +22,27 @@ flowchart TB
         LIDAR["mock_lidar_publisher<br/>(real LiDAR driver: not built yet)<br/>(jetbot_governor)"]
         BRIDGE["vla_client_bridge<br/>(jetbot_vla_bridge)"]
         GOV["predictive_governor<br/>safety veto<br/>(jetbot_governor)"]
-        ARB["mode_arbiter<br/>traditional vs VLA<br/>(jetbot_nav)"]
-        MUX["twist_mux"]
-        MOTOR["motor_driver<br/>(jetbot_base)"]
+        MOTOR["motor_driver<br/>arbitrates by mode<br/>(jetbot_base)"]
         EKF["ekf_filter_node<br/>(robot_localization)"]
         RSP["robot_state_publisher<br/>(jetbot_description)"]
         SLAM["rtabmap<br/>(jetbot_slam)"]
-        JOY["teleop_twist_keyboard<br/>(stock package, run manually)"]
     end
 
+    JOYDEV -->|"joy"| JOYCTL
+    JOYCTL -->|"joy_controller/mode"| MOTOR
+    JOYCTL -->|"cmd_vel_joy"| MOTOR
     CAM -->|"camera/image_raw"| BRIDGE
     CAM -->|"camera/image_raw<br/>camera/camera_info"| SLAM
     CAM -->|"camera/image_raw"| YOLO
     CAM -->|"camera/camera_info"| PROJ
     YOLO -->|"detections"| PROJ
     PROJ -->|"obstacles/points"| NAV2
-    NAV2 -->|"cmd_vel_nav"| ARB
+    NAV2 -->|"cmd_vel_nav"| MOTOR
     BRIDGE -->|"HTTP POST /predict"| VLASRV
     VLASRV -->|"action tokens"| BRIDGE
     BRIDGE -->|"/cmd_vel_vla"| GOV
     LIDAR -->|"/scan"| GOV
-    GOV -->|"/cmd_vel_final"| ARB
-    ARB -->|"cmd_vel_autonomous (priority 10)"| MUX
-    JOY -->|"cmd_vel_joy (priority 50)"| MUX
-    MUX -->|"cmd_vel_mux"| MOTOR
+    GOV -->|"/cmd_vel_final"| MOTOR
     MOTOR -->|"/odom"| EKF
     EKF -->|"/odometry/filtered +<br/>odom→base_footprint TF"| SLAM
     RSP -->|"base_footprint→...→<br/>camera_optical_frame TF (static)"| SLAM
@@ -51,8 +50,7 @@ flowchart TB
 ```
 
 Notes on the diagram:
-- **`twist_mux` priority** (higher number wins): `cmd_vel_safety` (90, reserved — nothing publishes here yet) > `cmd_vel_joy` (50) > `cmd_vel_autonomous` (10). See `ros_ws/src/jetbot_base/config/twist_mux.yaml`.
-- **`mode_arbiter`** picks exactly one of {Nav2, VLA} to actually reach `cmd_vel_autonomous` — the operator (not `twist_mux`) decides which pipeline drives the robot when the joystick is idle. See `jetbot_nav`'s README for why this can't just be a `twist_mux` lock.
+- **No mux node.** `motor_driver` subscribes to all three candidate sources (`cmd_vel_joy`, `cmd_vel_final`, `cmd_vel_nav`) directly and follows whichever `joy_controller/mode` currently selects — this replaced an earlier `twist_mux` + `mode_arbiter` combination. See `jetbot_base`'s README for the two distinct fail-safe rules this implements (selected source stale → stop; **mode signal itself stale → stop unconditionally**, since losing the joystick means losing the human's override channel regardless of which autonomous mode was active).
 - **`jetbot_slam`** does visual localization/loop-closure only (monocular camera, no depth) — not an obstacle-aware map for Nav2. Nav2's costmaps instead consume `ground_plane_projector`'s camera-derived obstacle points directly. See `jetbot_slam`'s and `jetbot_nav`'s READMEs for why.
 
 ## Repo layout
@@ -60,11 +58,11 @@ Notes on the diagram:
 ```
 .
 ├── ros_ws/src/
-│   ├── jetbot_base/         motor control, odometry, teleop, twist_mux config, master bringup launch
+│   ├── jetbot_base/         motor control + arbitration, odometry, joystick input, master bringup launch
 │   ├── jetbot_vision/       camera capture, mock camera, YOLO detector
 │   ├── jetbot_governor/     LiDAR safety veto ("the WAM layer"), mock LiDAR
 │   ├── jetbot_vla_bridge/   VLA server client
-│   ├── jetbot_nav/          Nav2 + camera-fed costmap + traditional-vs-VLA mode arbiter
+│   ├── jetbot_nav/          Nav2 + camera-fed costmap (traditional pipeline)
 │   ├── jetbot_slam/         RTAB-Map monocular SLAM launch/config
 │   └── jetbot_description/  URDF + RViz visualization
 ├── simulation/
@@ -93,7 +91,7 @@ sudo apt install ros-humble-desktop python3-colcon-common-extensions
 
 # This project's extra dependencies (not part of ros-humble-desktop)
 sudo apt install -y \
-  ros-humble-twist-mux \
+  ros-humble-joy \
   ros-humble-rtabmap-ros \
   ros-humble-camera-info-manager-py \
   ros-humble-nav2-bringup \
@@ -126,12 +124,13 @@ source /opt/ros/humble/setup.bash
 source ros_ws/install/setup.bash
 ros2 launch jetbot_base bringup.launch.py mock_mode:=true server_url:=http://localhost:8000/predict
 ```
-This starts `motor_driver` (mock motors), `twist_mux`, `predictive_governor`, `vla_client_bridge`, `mock_camera_publisher`, and `mock_lidar_publisher` together.
+This starts `joy_node`, `joy_controller`, `motor_driver` (mock motors), `predictive_governor`, `vla_client_bridge`, `mock_camera_publisher`, and `mock_lidar_publisher` together. `joy_node` needs a real joystick and will log errors without one — that's expected if you don't have one plugged in.
 
-**3. (Optional) Drive manually and confirm it overrides the VLA:**
+**3. (Optional) Drive manually** — cycle `joy_controller`'s mode to `'manual'` with your controller's mapped button (default: Xbox Start/Menu, see `jetbot_base`'s README), then use the left stick. Without a physical controller, publish synthetic `sensor_msgs/Joy` messages instead:
 ```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=cmd_vel_joy
+ros2 topic pub /joy sensor_msgs/msg/Joy "{axes: [0.0, 0.8, 0,0,0,0,0,0], buttons: [0,0,0,0,0,0,0,1,0,0,0]}" -r 20
 ```
+The joystick always overrides whichever autonomous mode is active, and losing the `/joy` feed entirely (controller unplugged) stops the robot outright, regardless of mode — see `jetbot_base`'s README for why.
 
 **4. (Optional) Visualize the robot in RViz:**
 ```bash
@@ -152,11 +151,7 @@ ros2 param set /mock_lidar_publisher front_distance 0.2
 ```bash
 ros2 launch jetbot_nav nav.launch.py mock_mode:=true
 ```
-This starts a synthetic detection (no `ultralytics`/camera needed), projects it onto the ground plane as a costmap obstacle, and brings up the full Nav2 stack. `mode_arbiter` starts in `'traditional'` mode by default — switch to the VLA instead with:
-```bash
-ros2 param set /mode_arbiter mode vla
-```
-Either way, the joystick (step 3) still always overrides whichever autonomous mode is selected.
+This starts a synthetic detection (no `ultralytics`/camera needed), projects it onto the ground plane as a costmap obstacle, and brings up the full Nav2 stack. Cycle `joy_controller`'s mode to `'traditional'` (two button presses from the default `'vla'`) to actually drive using it.
 
 ## Testing
 
@@ -179,5 +174,7 @@ colcon test --packages-select jetbot_governor jetbot_base jetbot_vision jetbot_v
 - **No real VLA/navigation model deployed** — only the random-token mock server. `brain_research_report.md`'s recommendation is to start with ViNT/NoMaD (navigation-specific), not a manipulation-focused VLA like OpenVLA.
 - **`yolo_detector`** needs `ultralytics` + an exported TensorRT engine (neither ships in-repo) to run for real; `mock_detection_publisher` covers testing the rest of the pipeline without either.
 - **Nav2 footprint/velocity params are hand-matched, not enforced** — `jetbot_nav/config/nav2_params.yaml`'s footprint and velocity limits are kept in sync with the URDF and `motor_driver` manually; nothing checks they still agree if either changes.
+- **`joy_controller`'s button/axis indices are not verified against physical hardware** — no Xbox controller available in this dev environment. Defaults come from `teleop_twist_joy`'s own reference config; confirm with `ros2 topic echo /joy` before trusting them.
+- **`predictive_governor`'s veto is still a fixed LiDAR-distance threshold**, not the "intelligent decision between traditional and VLA" direction described for the governor long-term — see `brain_research_report.md`.
 - **No LICENSE file** at the repo root (individual packages declare MIT internally).
 - Isaac Sim: blocked on GPU hardware (needs an RTX-class GPU; see `isaac_sim_setup.md` and the GPU server hardware notes in `brain_research_report.md`), and `simulate_jetbot.py`'s ROS2 bridge wiring is still a non-functional stub.

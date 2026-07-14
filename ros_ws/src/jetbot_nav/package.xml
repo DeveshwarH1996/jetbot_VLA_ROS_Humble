@@ -5,9 +5,10 @@
   <version>0.1.0</version>
   <description>
     Traditional (Nav2-based) navigation for JetBot: projects camera
-    detections onto the ground plane as costmap obstacles, and arbitrates
-    between the traditional planner and the VLA as the source feeding
-    twist_mux's autonomous input.
+    detections onto the ground plane as costmap obstacles, feeding Nav2's
+    controller/planner stack. Its output (cmd_vel_nav) is one of three
+    sources jetbot_base's motor_driver arbitrates between, selected by
+    joy_controller's mode.
   </description>
   <maintainer email="deveshwarh@gmail.com">Deveshwar</maintainer>
   <license>MIT</license>
@@ -19,7 +20,6 @@
   <depend>vision_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
-  <depend>rcl_interfaces</depend>
   <depend>std_msgs</depend>
   <exec_depend>nav2_bringup</exec_depend>
 

@@ -19,13 +19,12 @@ setup(
     zip_safe=True,
     maintainer='Deveshwar',
     maintainer_email='deveshwarh@gmail.com',
-    description='Traditional Nav2-based navigation and mode arbitration for JetBot',
+    description='Traditional Nav2-based navigation for JetBot',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'ground_plane_projector = jetbot_nav.ground_plane_projector:main',
-            'mode_arbiter = jetbot_nav.mode_arbiter:main',
         ],
     },
 )

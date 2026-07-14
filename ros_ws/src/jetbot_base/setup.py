@@ -25,7 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'motor_driver = jetbot_base.motor_driver:main',
-            'teleop = jetbot_base.teleop:main',
+            'joy_controller = jetbot_base.joy_controller:main',
         ],
     },
 )

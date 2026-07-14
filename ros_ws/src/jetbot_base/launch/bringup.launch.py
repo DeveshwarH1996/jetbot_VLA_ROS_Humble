@@ -2,6 +2,8 @@
 Master launch file for the JetBot's core control loop.
 
 Node graph:
+  joy_node (ros-humble-joy)      -> /joy
+  joy_controller                 -> joy_controller/mode, cmd_vel_joy
   mock_camera_publisher / camera_node -> /camera/image_raw
   vla_client_bridge     -> /cmd_vel_vla
   mock_lidar_publisher / lidar driver -> /scan
@@ -9,17 +11,23 @@ Node graph:
   motor_driver           -> /odom (open-loop) -> ekf_filter_node -> /odometry/filtered
                             + odom->base_footprint TF (motor_driver's own TF broadcast
                             is disabled via publish_tf:=false; the EKF owns it instead)
-  teleop_twist_keyboard (run manually)                  -> /cmd_vel_joy
-  twist_mux             subscribes /cmd_vel_autonomous, /cmd_vel_joy, /cmd_vel_safety
-                         -> publishes cmd_vel_out (remapped to /cmd_vel_mux)
-  motor_driver           subscribes /cmd_vel_mux
+  motor_driver           subscribes joy_controller/mode, cmd_vel_joy, cmd_vel_final,
+                          cmd_vel_nav - follows whichever one the mode selects, no
+                          separate mux node (see motor_driver.py's own docstring for
+                          why joystick loss always means stop, regardless of mode)
 
 NOTE: this file does NOT start jetbot_nav's nav.launch.py (Nav2 + the
-traditional planner + mode_arbiter). /cmd_vel_final (the VLA's
-safety-checked output) only reaches the motors if mode_arbiter is also
-running and its mode is set to 'vla' - without jetbot_nav's launch file
-running alongside this one, /cmd_vel_autonomous has no publisher at all
-and the robot only responds to the joystick. See jetbot_nav's README.
+traditional planner). cmd_vel_final and cmd_vel_nav only reach the motors
+if their respective producer is running AND joy_controller's mode
+selects them - without jetbot_nav's launch file running alongside this
+one, 'traditional' mode has no cmd_vel_nav publisher and motor_driver
+fails safe (stops) rather than silently doing nothing. See jetbot_nav's
+README.
+
+joy_node needs a real joystick device (/dev/input/jsX) - it will log
+errors without one attached. To exercise the mode-cycling/arbitration
+logic without physical hardware, publish synthetic sensor_msgs/Joy
+messages directly instead of running joy_node (see jetbot_base's README).
 
 Usage (mock mode, no hardware required):
   ros2 launch jetbot_base bringup.launch.py mock_mode:=true \
@@ -40,11 +48,11 @@ def generate_launch_description():
     server_url = LaunchConfiguration('server_url')
     safety_threshold = LaunchConfiguration('safety_threshold')
 
-    twist_mux_config = os.path.join(
-        get_package_share_directory('jetbot_base'), 'config', 'twist_mux.yaml'
-    )
     ekf_config = os.path.join(
         get_package_share_directory('jetbot_base'), 'config', 'ekf.yaml'
+    )
+    joy_controller_config = os.path.join(
+        get_package_share_directory('jetbot_base'), 'config', 'joy_controller.yaml'
     )
 
     return LaunchDescription([
@@ -54,6 +62,21 @@ def generate_launch_description():
                                description='VLA server prediction endpoint'),
         DeclareLaunchArgument('safety_threshold', default_value='0.4',
                                description='Governor veto distance in meters'),
+
+        Node(
+            package='joy',
+            executable='joy_node',
+            name='joy_node',
+            output='screen',
+        ),
+
+        Node(
+            package='jetbot_base',
+            executable='joy_controller',
+            name='joy_controller',
+            parameters=[joy_controller_config],
+            output='screen',
+        ),
 
         Node(
             package='jetbot_base',
@@ -68,15 +91,6 @@ def generate_launch_description():
             executable='ekf_node',
             name='ekf_filter_node',
             parameters=[ekf_config],
-            output='screen',
-        ),
-
-        Node(
-            package='twist_mux',
-            executable='twist_mux',
-            name='twist_mux',
-            parameters=[twist_mux_config],
-            remappings=[('cmd_vel_out', 'cmd_vel_mux')],
             output='screen',
         ),
 

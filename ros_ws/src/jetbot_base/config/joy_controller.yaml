@@ -1,0 +1,17 @@
+# joy_controller button/axis mapping.
+#
+# Defaults are for a standard Xbox controller via the Linux joystick
+# driver (ros-humble-joy's joy_node), taken from ros-humble-
+# teleop_twist_joy's own reference xbox.config.yaml (axis_linear=1,
+# axis_angular=0) - NOT independently verified against physical hardware
+# in this environment. Run `ros2 topic echo /joy`, move the stick you
+# want and press the button you want, and confirm the indices below
+# actually match before relying on this.
+joy_controller:
+  ros__parameters:
+    mode_button: 7      # Xbox: Start/Menu - deliberate, unlikely to be hit by accident
+    linear_axis: 1        # left stick vertical
+    angular_axis: 0       # left stick horizontal
+    linear_scale: 0.2     # matches jetbot_base motor_driver's max_linear_vel
+    angular_scale: 1.0     # matches jetbot_base motor_driver's max_angular_vel
+    deadzone: 0.05

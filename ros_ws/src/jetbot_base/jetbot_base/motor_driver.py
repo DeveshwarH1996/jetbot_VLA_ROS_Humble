@@ -5,22 +5,36 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 from tf2_ros import TransformBroadcaster
 from .motor_interface import MockMotorInterface, WaveshareMotorInterface
 
 
 class JetbotMotorDriver(Node):
     """
-    ROS2 Node that consumes /cmd_vel_mux and drives the JetBot motors.
+    Drives the JetBot motors and arbitrates between three command sources
+    based on joy_controller's mode - replaces twist_mux + mode_arbiter.
 
-    Implements the 'Sleeve' (Safety Governor) pattern, and publishes
-    open-loop /odom by integrating commanded velocity - the Waveshare
-    JetBot's motors have no encoders, so this is dead-reckoning against
-    what we *told* the motors to do, not what they actually did. It will
-    drift steadily (wheel slip, PWM/motor nonlinearity, no feedback at
-    all) and is published with large fixed covariance so any future
-    sensor fusion (robot_localization, RTAB-Map) treats it as a weak
-    prior, not ground truth.
+    joy_controller publishes 'joy_controller/mode' ('manual' / 'vla' /
+    'traditional') and continuously relays the joystick as 'cmd_vel_joy'.
+    This node follows whichever of {cmd_vel_joy, cmd_vel_final (VLA),
+    cmd_vel_nav (traditional planner)} the current mode selects, and
+    fails safe (stops) in two distinct ways:
+      - if the SELECTED source's own data goes stale, same role
+        twist_mux's per-topic timeouts used to play.
+      - if joy_controller's mode signal itself goes stale, ALWAYS stop
+        regardless of what mode was last selected. This is deliberate:
+        losing the joystick means losing the human's override channel,
+        so autonomous driving must not continue just because the VLA or
+        planner data still looks fine.
+
+    Also publishes open-loop /odom by integrating commanded velocity -
+    the Waveshare JetBot's motors have no encoders, so this is
+    dead-reckoning against what we *told* the motors to do, not what
+    they actually did. It will drift steadily (wheel slip, PWM/motor
+    nonlinearity, no feedback at all) and is published with large fixed
+    covariance so any future sensor fusion (robot_localization,
+    RTAB-Map) treats it as a weak prior, not ground truth.
     """
 
     def __init__(self):
@@ -31,8 +45,9 @@ class JetbotMotorDriver(Node):
         self.declare_parameter('max_linear_vel', 0.2)
         self.declare_parameter('max_angular_vel', 1.0)
         self.declare_parameter('use_mock', True)
-        self.declare_parameter('heartbeat_timeout', 0.5)
+        self.declare_parameter('command_timeout', 0.5)
         self.declare_parameter('odom_rate_hz', 20.0)
+        self.declare_parameter('control_rate_hz', 20.0)
         # Set false when robot_localization's EKF is fusing this /odom -
         # only one node should ever broadcast a given TF edge. See
         # jetbot_base's README for the odom->base_footprint TF ownership
@@ -43,8 +58,9 @@ class JetbotMotorDriver(Node):
         self.max_linear_vel = self.get_parameter('max_linear_vel').get_parameter_value().double_value
         self.max_angular_vel = self.get_parameter('max_angular_vel').get_parameter_value().double_value
         self.use_mock = self.get_parameter('use_mock').get_parameter_value().bool_value
-        self.heartbeat_timeout = self.get_parameter('heartbeat_timeout').get_parameter_value().double_value
+        self.command_timeout = self.get_parameter('command_timeout').get_parameter_value().double_value
         odom_rate_hz = self.get_parameter('odom_rate_hz').get_parameter_value().double_value
+        control_rate_hz = self.get_parameter('control_rate_hz').get_parameter_value().double_value
         self.publish_tf = self.get_parameter('publish_tf').get_parameter_value().bool_value
 
         # Hardware Interface Initialization
@@ -59,8 +75,15 @@ class JetbotMotorDriver(Node):
                 self.get_logger().error(f"Hardware Init Failed: {e}. Falling back to MOCK.")
                 self.hw = MockMotorInterface()
 
-        # State
-        self.last_cmd_time = time.time()
+        # Arbitration state: current mode plus the latest Twist + receive
+        # time for each of the three candidate sources.
+        self.mode = None
+        self.last_mode_time = None
+        self.sources = {
+            'manual': {'twist': Twist(), 'time': None},
+            'vla': {'twist': Twist(), 'time': None},
+            'traditional': {'twist': Twist(), 'time': None},
+        }
         self.commanded_linear_x = 0.0
         self.commanded_angular_z = 0.0
         self.x = 0.0
@@ -68,53 +91,76 @@ class JetbotMotorDriver(Node):
         self.theta = 0.0
         self.last_odom_time = self.get_clock().now()
 
-        # ROS Interface
-        # Subscribes to twist_mux's arbitrated output (see
-        # jetbot_base/config/twist_mux.yaml), NOT a raw command source -
-        # twist_mux is what decides safety/joystick/vla priority.
-        self.subscription = self.create_subscription(
-            Twist,
-            'cmd_vel_mux',
-            self.cmd_vel_callback,
-            10
-        )
+        self.create_subscription(String, 'joy_controller/mode', self._mode_callback, 10)
+        self.create_subscription(Twist, 'cmd_vel_joy', self._make_source_callback('manual'), 10)
+        self.create_subscription(Twist, 'cmd_vel_final', self._make_source_callback('vla'), 10)
+        self.create_subscription(Twist, 'cmd_vel_nav', self._make_source_callback('traditional'), 10)
 
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        # Watchdog Timer
-        self.timer = self.create_timer(0.1, self.watchdog_callback)
+        self.control_timer = self.create_timer(1.0 / control_rate_hz, self._control_loop)
         self.odom_timer = self.create_timer(1.0 / odom_rate_hz, self.odom_callback)
 
-        self.get_logger().info("Jetbot Motor Driver node initialized and listening to /cmd_vel_mux")
+        self.get_logger().info(
+            "Jetbot Motor Driver initialized: arbitrating cmd_vel_joy / "
+            "cmd_vel_final / cmd_vel_nav via joy_controller/mode."
+        )
 
-    def cmd_vel_callback(self, msg):
-        self.last_cmd_time = time.time()
+    def _mode_callback(self, msg):
+        self.mode = msg.data
+        self.last_mode_time = time.time()
 
-        # 1. Safety Governor: Clamp velocities
+    def _make_source_callback(self, name):
+        def callback(msg):
+            self.sources[name]['twist'] = msg
+            self.sources[name]['time'] = time.time()
+        return callback
+
+    def _control_loop(self):
+        now = time.time()
+
+        # Losing the joystick's mode signal means losing the human's
+        # ability to instantly retake control - stop outright rather
+        # than keep following whatever mode was last selected.
+        if self.last_mode_time is None or (now - self.last_mode_time) > self.command_timeout:
+            self._stop("No mode signal from joy_controller (joystick disconnected?).")
+            return
+
+        source = self.sources.get(self.mode)
+        if source is None:
+            self._stop(f"Unknown mode '{self.mode}' from joy_controller.")
+            return
+
+        if source['time'] is None or (now - source['time']) > self.command_timeout:
+            self._stop(f"'{self.mode}' mode selected but its command source has gone stale.")
+            return
+
+        self._drive(source['twist'])
+
+    def _stop(self, reason):
+        if self.commanded_linear_x != 0.0 or self.commanded_angular_z != 0.0:
+            self.get_logger().warn(f"Stopping: {reason}")
+        self.commanded_linear_x = 0.0
+        self.commanded_angular_z = 0.0
+        self.hw.stop()
+
+    def _drive(self, msg):
+        # Safety clamp
         linear_x = max(min(msg.linear.x, self.max_linear_vel), -self.max_linear_vel)
         angular_z = max(min(msg.angular.z, self.max_angular_vel), -self.max_angular_vel)
         self.commanded_linear_x = linear_x
         self.commanded_angular_z = angular_z
 
-        # 2. Differential Drive Kinematics
+        # Differential drive kinematics
         left_vel = linear_x + (angular_z * self.wheel_base / 2.0)
         right_vel = linear_x - (angular_z * self.wheel_base / 2.0)
 
-        # 3. Normalize to [-1.0, 1.0]
+        # Normalize to [-1.0, 1.0]
         norm_left = max(min(left_vel / self.max_linear_vel, 1.0), -1.0)
         norm_right = max(min(right_vel / self.max_linear_vel, 1.0), -1.0)
 
         self.hw.set_speeds(norm_left, norm_right)
-
-    def watchdog_callback(self):
-        if (time.time() - self.last_cmd_time) > self.heartbeat_timeout:
-            if self.last_cmd_time != 0:
-                self.get_logger().warn("Heartbeat lost! Stopping motors.")
-                self.hw.stop()
-                self.last_cmd_time = 0
-                self.commanded_linear_x = 0.0
-                self.commanded_angular_z = 0.0
 
     def odom_callback(self):
         now = self.get_clock().now()

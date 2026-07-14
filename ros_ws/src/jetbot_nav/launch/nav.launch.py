@@ -3,11 +3,14 @@ Traditional (Nav2-based) navigation for JetBot.
 
 Starts: a detections source (mock_detection_publisher in mock mode, or
 the real yolo_detector), ground_plane_projector (camera detections ->
-costmap obstacle points), the standard Nav2 stack via nav2_bringup's
+costmap obstacle points), and the standard Nav2 stack via nav2_bringup's
 navigation_launch.py (controller/planner/behavior servers, bt_navigator,
 velocity_smoother, lifecycle_manager - NOT map_server/amcl, see
-config/nav2_params.yaml for why), and mode_arbiter (selects this
-pipeline's output vs the VLA's as twist_mux's autonomous input).
+config/nav2_params.yaml for why).
+
+Nav2's output (cmd_vel_nav) is one of three sources jetbot_base's
+motor_driver arbitrates between directly, selected by joy_controller's
+mode - there is no separate arbiter node in this package anymore.
 
 nav2_bringup's navigation_launch.py already remaps its internal 'cmd_vel'
 to 'cmd_vel_nav' by default - verified against the installed launch file
@@ -17,8 +20,8 @@ wrong-argument-name mistake in jetbot_slam's launch file.
 PREREQUISITES this launch file does NOT start itself:
   - jetbot_description's robot_state_publisher (static camera TF)
   - jetbot_base's bringup.launch.py (motor_driver, robot_localization,
-    twist_mux - this file's mode_arbiter output only reaches the motors
-    if twist_mux is also running)
+    joy_controller - cmd_vel_nav only reaches the motors if motor_driver
+    is running and its mode is set to 'traditional')
   - A camera node publishing camera/image_raw + camera/camera_info
     (mock_camera_publisher or camera_node - not started here, since the
     detections source below needs it and jetbot_base/bringup.launch.py
@@ -76,12 +79,5 @@ def generate_launch_description():
                 os.path.join(nav2_bringup_share, 'launch', 'navigation_launch.py')
             ),
             launch_arguments={'params_file': nav2_params}.items(),
-        ),
-
-        Node(
-            package='jetbot_nav',
-            executable='mode_arbiter',
-            name='mode_arbiter',
-            output='screen',
         ),
     ])
