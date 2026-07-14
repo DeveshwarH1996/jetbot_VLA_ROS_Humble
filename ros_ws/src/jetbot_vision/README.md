@@ -23,6 +23,22 @@ Captures from a real V4L2 camera (CSI or USB) via OpenCV and publishes it as a R
 
 Raises at startup if the device can't be opened; if the device opens but frames stop arriving later (e.g. a flaky USB connection), it logs a warning per dropped frame rather than crashing.
 
+## Calibrating a real camera
+
+`camera_info_url` is how per-robot camera intrinsics get in — `jetbot_nav`'s `ground_plane_projector` reads the real `fx`/`fy`/`cx`/`cy` from whatever `CameraInfo` this publishes, not a hardcoded guess. But nobody has calibrated the actual JetBot camera yet, so this defaults to unset, and `camera_node` publishes an **uncalibrated** `CameraInfo` (all-zero intrinsics) with a warning in that case. `ground_plane_projector` detects this specifically (`fx`/`fy` ≤ 0) and refuses to project rather than crashing or silently computing garbage positions.
+
+To fix it for real:
+1. Install the calibration tool: `sudo apt-get install ros-humble-camera-calibration`.
+2. Print a checkerboard target, then run (adjust `--size`/`--square` for your actual board):
+   ```bash
+   ros2 run camera_calibration cameracalibrator --size 8x6 --square 0.024 \
+       --ros-args -r image:=/camera/image_raw
+   ```
+3. Move the board through the frame until all four bars in the calibration GUI turn green, click **CALIBRATE**, then **SAVE** — it writes a YAML in the standard format to `/tmp`.
+4. Point `camera_node` at it: `-p camera_info_url:=file:///path/to/your_calibration.yaml`.
+
+`config/camera_calibration.example.yaml` in this package shows the expected file format with clearly-labeled placeholder numbers — **do not use it as a real calibration**, a plausible-looking wrong intrinsic is more dangerous than the uncalibrated case, since it would silently produce wrong obstacle positions instead of failing loudly.
+
 ### `mock_camera_publisher`
 
 Synthetic camera for testing without hardware — publishes a static checkerboard pattern (not random noise: feature-based pipelines like visual odometry need trackable structure to exercise their code at all) plus a **fabricated** `CameraInfo` good enough to keep a downstream pipeline from dividing by zero, explicitly not a substitute for real calibration. A static image can only prove a vision pipeline runs cleanly, not that it tracks real motion — there is no camera actually moving through space in mock mode.

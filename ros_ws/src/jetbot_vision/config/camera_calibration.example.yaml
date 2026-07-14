@@ -1,0 +1,39 @@
+# TEMPLATE - NOT A REAL CALIBRATION. These numbers are placeholders and
+# will silently produce wrong obstacle positions in ground_plane_projector
+# if used as-is (they won't crash - that's exactly why they're dangerous;
+# a wrong-but-plausible intrinsic is worse than the uncalibrated case,
+# which at least fails loudly).
+#
+# Generate a real one for your specific camera unit with:
+#   ros2 run camera_calibration cameracalibrator --size 8x6 --square 0.024 \
+#       --ros-args -r image:=/camera/image_raw
+# (checkerboard size/square dimensions are whatever physical board you
+# print/use - the numbers above are just an example 8x6 internal-corners
+# board with 24mm squares). Follow the on-screen instructions (move the
+# board through the frame until all bars are green), click CALIBRATE,
+# then SAVE - it writes a YAML in this exact format to /tmp.
+#
+# Then point camera_node at your real file:
+#   ros2 run jetbot_vision camera_node --ros-args \
+#       -p camera_info_url:=file:///home/<you>/jetbot_camera_calibration.yaml
+# or set it in bringup.launch.py / a launch argument.
+image_width: 640
+image_height: 480
+camera_name: jetbot_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [500.0, 0.0, 320.0, 0.0, 500.0, 240.0, 0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [500.0, 0.0, 320.0, 0.0, 0.0, 500.0, 240.0, 0.0, 0.0, 0.0, 1.0, 0.0]

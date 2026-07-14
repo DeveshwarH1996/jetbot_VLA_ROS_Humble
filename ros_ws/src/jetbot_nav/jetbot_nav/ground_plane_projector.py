@@ -53,6 +53,21 @@ class GroundPlaneProjector(Node):
                 "No camera_info yet - can't project detections.", throttle_duration_sec=5.0)
             return
 
+        # An uncalibrated camera (camera_node's camera_info_url unset, or
+        # never actually calibrated for this robot) publishes CameraInfo
+        # with an all-zero K matrix. fx/fy <= 0 would otherwise divide by
+        # zero below and crash this node on the first real detection -
+        # fail loudly and safely instead, since a wrong-but-nonzero
+        # intrinsic would be worse (silently wrong obstacle positions).
+        if self.camera_info.k[0] <= 0.0 or self.camera_info.k[4] <= 0.0:
+            self.get_logger().error(
+                "camera_info has no valid intrinsics (fx/fy <= 0) - camera is "
+                "uncalibrated. Run camera calibration and set camera_node's "
+                "camera_info_url (see jetbot_vision's README). Not projecting "
+                "detections until this is fixed.",
+                throttle_duration_sec=5.0)
+            return
+
         try:
             transform = self.tf_buffer.lookup_transform(
                 self.GROUND_FRAME, self.optical_frame, rclpy.time.Time(),
