@@ -21,7 +21,9 @@
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>python3-yaml</depend>
   <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>jetbot_base</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

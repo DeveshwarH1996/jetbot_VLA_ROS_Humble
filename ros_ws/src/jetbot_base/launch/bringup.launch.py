@@ -54,6 +54,12 @@ def generate_launch_description():
     joy_controller_config = os.path.join(
         get_package_share_directory('jetbot_base'), 'config', 'joy_controller.yaml'
     )
+    # Shared physical constants (wheel_base, max_linear_vel, max_angular_vel,
+    # footprint) - single source of truth, loaded by every node that needs
+    # any of them instead of each keeping its own hand-copied numbers.
+    robot_params_config = os.path.join(
+        get_package_share_directory('jetbot_base'), 'config', 'robot_params.yaml'
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument('mock_mode', default_value='true',
@@ -74,7 +80,7 @@ def generate_launch_description():
             package='jetbot_base',
             executable='joy_controller',
             name='joy_controller',
-            parameters=[joy_controller_config],
+            parameters=[robot_params_config, joy_controller_config],
             output='screen',
         ),
 
@@ -82,7 +88,7 @@ def generate_launch_description():
             package='jetbot_base',
             executable='motor_driver',
             name='jetbot_motor_driver',
-            parameters=[{'use_mock': mock_mode, 'publish_tf': False}],
+            parameters=[robot_params_config, {'use_mock': mock_mode, 'publish_tf': False}],
             output='screen',
         ),
 

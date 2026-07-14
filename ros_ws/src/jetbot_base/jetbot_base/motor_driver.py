@@ -40,8 +40,11 @@ class JetbotMotorDriver(Node):
     def __init__(self):
         super().__init__('jetbot_motor_driver')
 
-        # Parameters
-        self.declare_parameter('wheel_base', 0.14)
+        # Parameters. Defaults here match config/robot_params.yaml (the
+        # shared source of truth) so this node behaves sanely even if
+        # launched standalone without loading that file - keep them in
+        # sync if it changes.
+        self.declare_parameter('wheel_base', 0.102)
         self.declare_parameter('max_linear_vel', 0.2)
         self.declare_parameter('max_angular_vel', 1.0)
         self.declare_parameter('use_mock', True)

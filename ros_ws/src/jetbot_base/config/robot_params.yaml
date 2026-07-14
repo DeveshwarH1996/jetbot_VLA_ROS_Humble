@@ -1,0 +1,22 @@
+# Single source of truth for physical robot constants shared across
+# packages - previously duplicated (and drifted out of sync: wheel_base
+# here was 0.14 while the URDF's actual wheel spacing works out to
+# 0.102) across motor_driver's parameter defaults, joy_controller's
+# scale factors, and jetbot_nav's Nav2 footprint/velocity config.
+#
+# The `/**:` wildcard applies these to every node that loads this file,
+# regardless of that node's own name - see motor_driver and
+# joy_controller's parameter names, which must match these keys exactly
+# for the values to actually take.
+#
+# wheel_base and footprint should match jetbot_description's URDF -
+# kept manually in sync (auto-deriving them from the URDF at launch
+# time would need real URDF-parsing tooling, beyond this project's
+# current scope). If you change the robot's physical dimensions, update
+# both the URDF and this file together.
+/**:
+  ros__parameters:
+    wheel_base: 0.102        # meters; matches URDF's left/right_wheel_joint y-offsets (+/-0.051)
+    max_linear_vel: 0.2      # m/s
+    max_angular_vel: 1.0     # rad/s
+    footprint: "[[0.05, 0.05], [0.05, -0.05], [-0.05, -0.05], [-0.05, 0.05]]"  # matches URDF's 0.1x0.1m chassis box

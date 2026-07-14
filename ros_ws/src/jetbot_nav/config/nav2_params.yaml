@@ -6,10 +6,13 @@
 # pre-built map. Add map_server + amcl once a real occupancy-grid source
 # (LiDAR via slam_toolbox, or a depth camera) exists.
 #
-# Footprint and velocity limits are matched to jetbot_description's URDF
-# (10cm chassis box) and jetbot_base's motor_driver parameters
-# (max_linear_vel/max_angular_vel/wheel_base) - keep these in sync if
-# either changes.
+# Footprint and velocity limits below (marked "OVERRIDDEN AT LAUNCH")
+# are placeholders only - launch/nav.launch.py's _merge_nav2_params
+# overwrites them at launch time with the real values from jetbot_base's
+# config/robot_params.yaml, the single shared source of truth also used
+# by motor_driver and joy_controller. Edit that file, not the numbers
+# here, unless you're editing Nav2-specific tuning that has no
+# equivalent there (lookahead distances, goal tolerances, etc.).
 
 bt_navigator:
   ros__parameters:
@@ -48,7 +51,7 @@ controller_server:
     # default for a small differential-drive robot with no manipulator.
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      desired_linear_vel: 0.15       # < motor_driver's max_linear_vel (0.2), leaves headroom
+      desired_linear_vel: 0.15       # OVERRIDDEN AT LAUNCH: 0.75 * robot_params.yaml's max_linear_vel
       max_angular_accel: 2.0
       lookahead_dist: 0.4
       min_lookahead_dist: 0.2
@@ -64,8 +67,7 @@ controller_server:
       regulated_linear_scaling_min_speed: 0.05
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.785
-      max_angular_vel: 1.0           # matches motor_driver's max_angular_vel
-      min_turning_radius: 0.0        # differential drive can turn in place
+      rotate_to_heading_angular_vel: 1.0   # OVERRIDDEN AT LAUNCH: robot_params.yaml's max_angular_vel
 
 local_costmap:
   local_costmap:
@@ -77,7 +79,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      footprint: "[[0.05, 0.05], [0.05, -0.05], [-0.05, -0.05], [-0.05, 0.05]]"
+      footprint: "[[0.05, 0.05], [0.05, -0.05], [-0.05, -0.05], [-0.05, 0.05]]"  # OVERRIDDEN AT LAUNCH: robot_params.yaml's footprint
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -116,7 +118,7 @@ global_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      footprint: "[[0.05, 0.05], [0.05, -0.05], [-0.05, -0.05], [-0.05, 0.05]]"
+      footprint: "[[0.05, 0.05], [0.05, -0.05], [-0.05, -0.05], [-0.05, 0.05]]"  # OVERRIDDEN AT LAUNCH: robot_params.yaml's footprint
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -178,8 +180,8 @@ velocity_smoother:
   ros__parameters:
     use_sim_time: false
     smoothing_frequency: 20.0
-    max_velocity: [0.2, 0.0, 1.0]     # matches motor_driver's max_linear_vel/max_angular_vel
-    min_velocity: [-0.2, 0.0, -1.0]
+    max_velocity: [0.2, 0.0, 1.0]     # OVERRIDDEN AT LAUNCH: [max_linear_vel, 0, max_angular_vel]
+    min_velocity: [-0.2, 0.0, -1.0]   # OVERRIDDEN AT LAUNCH: [-max_linear_vel, 0, -max_angular_vel]
     max_accel: [0.5, 0.0, 2.5]
     max_decel: [-0.5, 0.0, -2.5]
     odom_topic: /odometry/filtered

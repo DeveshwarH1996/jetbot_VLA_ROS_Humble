@@ -13,15 +13,15 @@ Single source of truth for "what should be driving the robot right now" — repl
 
 Both are published on **every** `/joy` message, not just on change — this matters. `joy_node` keeps `/joy` arriving continuously (autorepeat) as long as the physical controller is connected, and `motor_driver`'s staleness checks depend on that steady stream to tell "controller still connected" from "controller lost" — the same role `twist_mux`'s per-topic timeouts used to play.
 
-**Parameters** (`config/joy_controller.yaml`)
-| Name | Default | Meaning |
-|---|---|---|
-| `mode_button` | `7` | Button index that cycles modes (Xbox: Start/Menu — deliberate, not a face button) |
-| `linear_axis` | `1` | Axis index for forward/back (Xbox: left stick vertical) |
-| `angular_axis` | `0` | Axis index for turning (Xbox: left stick horizontal) |
-| `linear_scale` | `0.2` | Should match `motor_driver`'s `max_linear_vel` |
-| `angular_scale` | `1.0` | Should match `motor_driver`'s `max_angular_vel` |
-| `deadzone` | `0.05` | Axis values smaller than this are treated as zero |
+**Parameters** — hardware-specific ones from `config/joy_controller.yaml`, physical-robot ones from the shared `config/robot_params.yaml` (see below)
+| Name | Default | Source | Meaning |
+|---|---|---|---|
+| `mode_button` | `7` | `joy_controller.yaml` | Button index that cycles modes (Xbox: Start/Menu — deliberate, not a face button) |
+| `linear_axis` | `1` | `joy_controller.yaml` | Axis index for forward/back (Xbox: left stick vertical) |
+| `angular_axis` | `0` | `joy_controller.yaml` | Axis index for turning (Xbox: left stick horizontal) |
+| `max_linear_vel` | `0.2` | `robot_params.yaml` | Scale factor for the linear axis — same parameter name and value as `motor_driver`'s, not a separately-tracked copy |
+| `max_angular_vel` | `1.0` | `robot_params.yaml` | Scale factor for the angular axis, likewise shared with `motor_driver` |
+| `deadzone` | `0.05` | `joy_controller.yaml` | Axis values smaller than this are treated as zero |
 
 **⚠️ Button/axis indices are not verified against physical hardware in this dev environment.** Defaults come from `ros-humble-teleop_twist_joy`'s own reference `xbox.config.yaml` (`axis_linear=1`, `axis_angular=0`), which should be right for a standard Xbox controller via the Linux joystick driver — but run `ros2 topic echo /joy`, move the stick and press the button you intend, and confirm the indices actually match before trusting them.
 
@@ -49,19 +49,25 @@ Drives the physical (or mock) motors, and is now the arbiter too — no separate
 | `odom` | `nav_msgs/Odometry` | Open-loop dead-reckoning (see caveat below), 20Hz default. |
 | `odom` → `base_footprint` TF | — | Only if `publish_tf:=true`. In `bringup.launch.py` this is set `false` — `robot_localization`'s EKF owns that TF edge instead (see below); only one node should ever broadcast a given transform. |
 
-**Parameters**
-| Name | Default | Meaning |
-|---|---|---|
-| `wheel_base` | `0.14` | meters, used for differential-drive kinematics |
-| `max_linear_vel` | `0.2` | m/s, also the clamp ceiling on incoming commands |
-| `max_angular_vel` | `1.0` | rad/s, clamp ceiling |
-| `use_mock` | `true` | `false` tries `WaveshareMotorInterface` (real hardware), falling back to mock on any failure |
-| `command_timeout` | `0.5` | seconds; applies to both fail-safe cases above |
-| `odom_rate_hz` | `20.0` | odometry publish rate |
-| `control_rate_hz` | `20.0` | arbitration/motor-command rate |
-| `publish_tf` | `true` | set `false` when `robot_localization`'s EKF is fusing this `/odom` and should own `odom→base_footprint` instead |
+**Parameters** — `wheel_base`/`max_linear_vel`/`max_angular_vel` come from the shared `config/robot_params.yaml`; the rest are `motor_driver`-specific
+| Name | Default | Source | Meaning |
+|---|---|---|---|
+| `wheel_base` | `0.102` | `robot_params.yaml` | meters, used for differential-drive kinematics |
+| `max_linear_vel` | `0.2` | `robot_params.yaml` | m/s, also the clamp ceiling on incoming commands |
+| `max_angular_vel` | `1.0` | `robot_params.yaml` | rad/s, clamp ceiling |
+| `use_mock` | `true` | — | `false` tries `WaveshareMotorInterface` (real hardware), falling back to mock on any failure |
+| `command_timeout` | `0.5` | — | seconds; applies to both fail-safe cases above |
+| `odom_rate_hz` | `20.0` | — | odometry publish rate |
+| `control_rate_hz` | `20.0` | — | arbitration/motor-command rate |
+| `publish_tf` | `true` | — | set `false` when `robot_localization`'s EKF is fusing this `/odom` and should own `odom→base_footprint` instead |
 
 **⚠️ Odometry accuracy caveat**: the Waveshare kit's TT motors have no encoders. `/odom` is computed by integrating *commanded* velocity, not measured wheel motion — it will drift steadily (no correction for wheel slip, PWM nonlinearity, or anything else) and is published with large, fixed covariance for exactly that reason. Treat it as a weak prior, not ground truth.
+
+## `config/robot_params.yaml` — the shared source of truth
+
+`wheel_base`, `max_linear_vel`, `max_angular_vel`, and `footprint` used to be separately hand-copied into `motor_driver`'s defaults, `joy_controller`'s scale factors, and `jetbot_nav`'s Nav2 config — and they'd drifted: this file's `wheel_base` used to be `0.14` while the URDF's actual wheel spacing works out to `0.102`, a mismatch nobody had caught. Now there's one file, loaded via ROS2's `/**:` wildcard syntax so any node that declares a matching parameter name picks it up automatically — `bringup.launch.py` loads it for both `motor_driver` and `joy_controller`, and `jetbot_nav`'s `nav.launch.py` merges it into Nav2's config at launch time (see that package's README).
+
+**`wheel_base` and `footprint` should match `jetbot_description`'s URDF** — kept manually in sync, not auto-derived (parsing the URDF at launch time to compute these would need real URDF-introspection tooling, more than this project currently has). If you change the robot's physical dimensions, update both the URDF and this file together.
 
 ## `config/ekf.yaml` — `robot_localization`
 

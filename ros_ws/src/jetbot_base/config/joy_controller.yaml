@@ -1,4 +1,7 @@
-# joy_controller button/axis mapping.
+# joy_controller button/axis mapping - hardware-specific values that do
+# NOT belong in the shared config/robot_params.yaml (max_linear_vel/
+# max_angular_vel come from there instead; see bringup.launch.py, which
+# loads both files for this node).
 #
 # Defaults are for a standard Xbox controller via the Linux joystick
 # driver (ros-humble-joy's joy_node), taken from ros-humble-
@@ -12,6 +15,4 @@ joy_controller:
     mode_button: 7      # Xbox: Start/Menu - deliberate, unlikely to be hit by accident
     linear_axis: 1        # left stick vertical
     angular_axis: 0       # left stick horizontal
-    linear_scale: 0.2     # matches jetbot_base motor_driver's max_linear_vel
-    angular_scale: 1.0     # matches jetbot_base motor_driver's max_angular_vel
     deadzone: 0.05

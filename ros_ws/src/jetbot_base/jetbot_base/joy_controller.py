@@ -47,15 +47,19 @@ class JoyController(Node):
         self.declare_parameter('mode_button', 7)     # Xbox: Start/Menu - deliberate, not a face button
         self.declare_parameter('linear_axis', 1)      # left stick vertical
         self.declare_parameter('angular_axis', 0)      # left stick horizontal
-        self.declare_parameter('linear_scale', 0.2)    # matches motor_driver's max_linear_vel
-        self.declare_parameter('angular_scale', 1.0)   # matches motor_driver's max_angular_vel
+        # Named to match motor_driver's parameters exactly (not
+        # linear_scale/angular_scale as before) so both nodes can load
+        # the same config/robot_params.yaml via its '/**:' wildcard and
+        # get the same values with no manual duplication.
+        self.declare_parameter('max_linear_vel', 0.2)
+        self.declare_parameter('max_angular_vel', 1.0)
         self.declare_parameter('deadzone', 0.05)
 
         self.mode_button = self.get_parameter('mode_button').get_parameter_value().integer_value
         self.linear_axis = self.get_parameter('linear_axis').get_parameter_value().integer_value
         self.angular_axis = self.get_parameter('angular_axis').get_parameter_value().integer_value
-        self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
-        self.angular_scale = self.get_parameter('angular_scale').get_parameter_value().double_value
+        self.linear_scale = self.get_parameter('max_linear_vel').get_parameter_value().double_value
+        self.angular_scale = self.get_parameter('max_angular_vel').get_parameter_value().double_value
         self.deadzone = self.get_parameter('deadzone').get_parameter_value().double_value
 
         self.mode_index = 0
