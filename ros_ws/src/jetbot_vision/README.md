@@ -11,7 +11,7 @@ Captures from a real V4L2 camera (CSI or USB) via OpenCV and publishes it as a R
 **Publishes**
 | Topic | Type | Notes |
 |---|---|---|
-| `camera/image_raw` | `sensor_msgs/Image` | `bgr8` encoding, `frame_id: camera_link` |
+| `camera/image_raw` | `sensor_msgs/Image` | `bgr8` encoding, `frame_id: camera_optical_frame` (the standard optical-convention frame added in `jetbot_description`'s URDF — not `camera_link`, which follows REP103 axes instead; see `jetbot_nav`'s README for why the distinction matters) |
 | `camera/camera_info` | `sensor_msgs/CameraInfo` | Only if `camera_info_manager` is installed **and** `camera_info_url` points to a valid calibration; otherwise this topic is silently not published (a clear error is logged instead — geometric vision like visual odometry/SLAM needs real intrinsics, so we don't fabricate defaults). |
 
 **Parameters**
@@ -31,11 +31,19 @@ Synthetic camera for testing without hardware — publishes a static checkerboar
 
 ### `yolo_detector`
 
-TensorRT-accelerated YOLOv8 object detector with a simple proportional-steering behavior (turns toward a detected target class).
+TensorRT-accelerated YOLOv8 object detector. **Publishes detections only — it does not drive the robot.** An earlier version computed proportional steering directly from bounding-box position and published straight to `cmd_vel`, bypassing any obstacle/path safety reasoning entirely; that direct-to-motor path has been removed. Detections now feed `jetbot_nav`'s `ground_plane_projector` → Nav2 costmap → planner/controller, so a real trajectory plan sits between "an object was seen" and "the wheels move." See `jetbot_nav`'s README for that pipeline.
 
-**⚠️ Not currently wired into the rest of the graph.** It publishes steering commands to plain `cmd_vel`, which nothing subscribes to in the current `twist_mux` setup (see `jetbot_base`'s README) — running it does not move the robot. It also needs `ultralytics` installed and a real exported TensorRT engine file (`model_path`, default `yolov8n.engine`) — neither ships in this repo; run `jetbot_vision/setup_vision_env.sh` on the Jetson to set both up. If the model or library is missing, it logs an error and stays inert rather than crashing.
+**Publishes**: `detections` (`vision_msgs/Detection2DArray`).
 
-**Parameters**: `model_path` (`yolov8n.engine`), `conf_threshold` (`0.5`), `target_class` (`'person'`), `use_tensorrt` (`true`).
+**Parameters**: `model_path` (`yolov8n.engine`), `conf_threshold` (`0.5`), `target_class` (`''` — empty publishes all detected classes; set to e.g. `'person'` to filter to one).
+
+Needs `ultralytics` installed and a real exported TensorRT engine file — neither ships in this repo; run `jetbot_vision/setup_vision_env.sh` on the Jetson to set both up. If the model or library is missing, it logs an error and stays inert rather than crashing. For testing without either, use `mock_detection_publisher` below.
+
+### `mock_detection_publisher`
+
+Publishes a synthetic `vision_msgs/Detection2DArray` (roughly a person-sized box, a couple meters ahead) so `jetbot_nav`'s ground-plane-projection → Nav2 costmap chain can be exercised without `ultralytics` or a real camera. Set `publish:=false` live to simulate a clear frame.
+
+**Parameters**: `class_id` (`'person'`), `bbox_center_x`/`bbox_center_y` (`340.0`/`380.0`), `bbox_width`/`bbox_height` (`80.0`/`180.0`), `score` (`0.9`), `rate_hz` (`5.0`), `publish` (`true`).
 
 ## `setup_vision_env.sh`
 

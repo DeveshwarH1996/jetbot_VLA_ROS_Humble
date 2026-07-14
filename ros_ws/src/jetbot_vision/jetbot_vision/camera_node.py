@@ -85,13 +85,13 @@ class JetbotCameraNode(Node):
             # Convert OpenCV image to ROS Image message
             img_msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
             img_msg.header.stamp = stamp
-            img_msg.header.frame_id = 'camera_link'
+            img_msg.header.frame_id = 'camera_optical_frame'
             self.publisher.publish(img_msg)
 
             if self.cim is not None:
                 info_msg = self.cim.getCameraInfo()
                 info_msg.header.stamp = stamp
-                info_msg.header.frame_id = 'camera_link'
+                info_msg.header.frame_id = 'camera_optical_frame'
                 self.info_publisher.publish(info_msg)
         else:
             self.get_logger().warn("Failed to capture frame from camera")

@@ -1,6 +1,6 @@
 # jetbot_governor
 
-The safety layer between the VLA bridge and `twist_mux` — vetoes proposed forward motion when LiDAR says it's unsafe. This is the node the project's planning docs call "the WAM layer" / "Safety Bubble", though today it's a hardcoded distance threshold, not a learned model (see `brain_research_report.md` at the repo root for research on whether/how to change that).
+The safety layer between the VLA bridge and the rest of the control stack — vetoes proposed forward motion when LiDAR says it's unsafe. This is the node the project's planning docs call "the WAM layer" / "Safety Bubble", though today it's a hardcoded distance threshold, not a learned model (see `brain_research_report.md` at the repo root for research on whether/how to change that).
 
 ## Nodes
 
@@ -15,7 +15,7 @@ The safety layer between the VLA bridge and `twist_mux` — vetoes proposed forw
 **Publishes**
 | Topic | Type | Notes |
 |---|---|---|
-| `/cmd_vel_final` | `geometry_msgs/Twist` | Safety-checked result. Feeds `twist_mux` as its lowest-priority input (see `jetbot_base/config/twist_mux.yaml`) — this node does **not** talk to the motors directly. |
+| `/cmd_vel_final` | `geometry_msgs/Twist` | Safety-checked result. Feeds `jetbot_nav`'s `mode_arbiter` as the "VLA" option (the operator/joystick selects whether this or the traditional Nav2 planner actually reaches `twist_mux` — see `jetbot_nav`'s README) — this node does **not** talk to the motors directly. |
 
 **Parameters**
 | Name | Default | Meaning |

@@ -1,6 +1,8 @@
+import os
+from glob import glob
 from setuptools import setup
 
-package_name = 'jetbot_vision'
+package_name = 'jetbot_nav'
 
 setup(
     name=package_name,
@@ -10,20 +12,20 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Deveshwar',
     maintainer_email='deveshwarh@gmail.com',
-    description='TensorRT accelerated YOLO vision for JetBot',
+    description='Traditional Nav2-based navigation and mode arbitration for JetBot',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'camera_node = jetbot_vision.camera_node:main',
-            'yolo_detector = jetbot_vision.yolo_detector:main',
-            'mock_camera_publisher = jetbot_vision.mock_camera_publisher:main',
-            'mock_detection_publisher = jetbot_vision.mock_detection_publisher:main',
+            'ground_plane_projector = jetbot_nav.ground_plane_projector:main',
+            'mode_arbiter = jetbot_nav.mode_arbiter:main',
         ],
     },
 )

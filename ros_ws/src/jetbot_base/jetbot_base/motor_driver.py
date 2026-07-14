@@ -33,6 +33,11 @@ class JetbotMotorDriver(Node):
         self.declare_parameter('use_mock', True)
         self.declare_parameter('heartbeat_timeout', 0.5)
         self.declare_parameter('odom_rate_hz', 20.0)
+        # Set false when robot_localization's EKF is fusing this /odom -
+        # only one node should ever broadcast a given TF edge. See
+        # jetbot_base's README for the odom->base_footprint TF ownership
+        # rule this implements.
+        self.declare_parameter('publish_tf', True)
 
         self.wheel_base = self.get_parameter('wheel_base').get_parameter_value().double_value
         self.max_linear_vel = self.get_parameter('max_linear_vel').get_parameter_value().double_value
@@ -40,6 +45,7 @@ class JetbotMotorDriver(Node):
         self.use_mock = self.get_parameter('use_mock').get_parameter_value().bool_value
         self.heartbeat_timeout = self.get_parameter('heartbeat_timeout').get_parameter_value().double_value
         odom_rate_hz = self.get_parameter('odom_rate_hz').get_parameter_value().double_value
+        self.publish_tf = self.get_parameter('publish_tf').get_parameter_value().bool_value
 
         # Hardware Interface Initialization
         if self.use_mock:
@@ -141,15 +147,16 @@ class JetbotMotorDriver(Node):
         odom.twist.twist.angular.z = self.commanded_angular_z
         self.odom_pub.publish(odom)
 
-        tf = TransformStamped()
-        tf.header.stamp = stamp
-        tf.header.frame_id = 'odom'
-        tf.child_frame_id = 'base_footprint'
-        tf.transform.translation.x = self.x
-        tf.transform.translation.y = self.y
-        tf.transform.rotation.z = qz
-        tf.transform.rotation.w = qw
-        self.tf_broadcaster.sendTransform(tf)
+        if self.publish_tf:
+            tf = TransformStamped()
+            tf.header.stamp = stamp
+            tf.header.frame_id = 'odom'
+            tf.child_frame_id = 'base_footprint'
+            tf.transform.translation.x = self.x
+            tf.transform.translation.y = self.y
+            tf.transform.rotation.z = qz
+            tf.transform.rotation.w = qw
+            self.tf_broadcaster.sendTransform(tf)
 
 
 def main(args=None):

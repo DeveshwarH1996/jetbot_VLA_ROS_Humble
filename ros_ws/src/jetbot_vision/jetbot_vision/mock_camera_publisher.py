@@ -57,7 +57,7 @@ class MockCameraPublisher(Node):
     def _make_camera_info(self, stamp):
         info = CameraInfo()
         info.header.stamp = stamp
-        info.header.frame_id = 'camera_link'
+        info.header.frame_id = 'camera_optical_frame'
         info.width = self.width
         info.height = self.height
         # Plausible but entirely made-up pinhole intrinsics (~60deg HFOV),
@@ -77,7 +77,7 @@ class MockCameraPublisher(Node):
 
         img_msg = self.bridge.cv2_to_imgmsg(self.frame, encoding='bgr8')
         img_msg.header.stamp = stamp
-        img_msg.header.frame_id = 'camera_link'
+        img_msg.header.frame_id = 'camera_optical_frame'
         self.publisher.publish(img_msg)
 
         self.info_publisher.publish(self._make_camera_info(stamp))

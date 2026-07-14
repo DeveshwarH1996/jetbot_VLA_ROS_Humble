@@ -115,4 +115,19 @@
     <origin xyz="0.055 0 0.04" rpy="0 0.25 0"/>
   </joint>
 
+  <!-- Optical frame: camera_link follows REP103 (X-forward, Y-left, Z-up),
+       but pixel/ray math (and CameraInfo's K matrix) assumes the standard
+       optical convention (X-right, Y-down, Z-forward-into-scene). This
+       fixed -pi/2,0,-pi/2 rotation is the standard REP103->optical
+       conversion used by real camera drivers (e.g. usb_cam, realsense).
+       jetbot_nav's ground_plane_projector looks up this frame via TF
+       rather than hardcoding the camera's mount angle in code. -->
+  <link name="camera_optical_frame"/>
+
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
+  </joint>
+
 </robot>

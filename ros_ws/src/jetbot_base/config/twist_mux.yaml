@@ -2,8 +2,15 @@
 #
 # NOTE: twist_mux priority is "higher number wins", the OPPOSITE of the
 # "lower number = higher priority" phrasing used in launch_guide.md. The
-# priority ordering below (safety > joystick > vla) is the same intent,
-# just expressed in twist_mux's own numeric convention.
+# priority ordering below (safety > joystick > autonomous) is the same
+# intent, just expressed in twist_mux's own numeric convention.
+#
+# 'autonomous' is fed by jetbot_nav's mode_arbiter, which selects between
+# the traditional Nav2 planner and the VLA - twist_mux itself only sees a
+# single autonomous source, and always lets the joystick preempt it
+# (mode_arbiter, not twist_mux, is what picks traditional vs VLA; see
+# jetbot_nav's README for why twist_mux's own "lock" mechanism can't do
+# that selection cleanly).
 #
 # twist_mux publishes the arbitrated result on 'cmd_vel_out' (remapped to
 # /cmd_vel_mux in bringup.launch.py), which is what jetbot_motor_driver
@@ -11,8 +18,8 @@
 twist_mux:
   ros__parameters:
     topics:
-      vla:
-        topic: cmd_vel_final     # predictive_governor's safety-checked VLA output
+      autonomous:
+        topic: cmd_vel_autonomous   # mode_arbiter's output: traditional planner OR VLA, never both
         timeout: 0.5
         priority: 10
       joystick:

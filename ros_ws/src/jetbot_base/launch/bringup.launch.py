@@ -1,15 +1,25 @@
 """
-Master launch file for the JetBot VLA pipeline.
+Master launch file for the JetBot's core control loop.
 
-Node graph (see /home/srinivas/jetbot_project/launch_guide.md section 5):
+Node graph:
   mock_camera_publisher / camera_node -> /camera/image_raw
   vla_client_bridge     -> /cmd_vel_vla
   mock_lidar_publisher / lidar driver -> /scan
   predictive_governor   subscribes /cmd_vel_vla + /scan -> publishes /cmd_vel_final
+  motor_driver           -> /odom (open-loop) -> ekf_filter_node -> /odometry/filtered
+                            + odom->base_footprint TF (motor_driver's own TF broadcast
+                            is disabled via publish_tf:=false; the EKF owns it instead)
   teleop_twist_keyboard (run manually)                  -> /cmd_vel_joy
-  twist_mux             subscribes /cmd_vel_final, /cmd_vel_joy, /cmd_vel_safety
+  twist_mux             subscribes /cmd_vel_autonomous, /cmd_vel_joy, /cmd_vel_safety
                          -> publishes cmd_vel_out (remapped to /cmd_vel_mux)
   motor_driver           subscribes /cmd_vel_mux
+
+NOTE: this file does NOT start jetbot_nav's nav.launch.py (Nav2 + the
+traditional planner + mode_arbiter). /cmd_vel_final (the VLA's
+safety-checked output) only reaches the motors if mode_arbiter is also
+running and its mode is set to 'vla' - without jetbot_nav's launch file
+running alongside this one, /cmd_vel_autonomous has no publisher at all
+and the robot only responds to the joystick. See jetbot_nav's README.
 
 Usage (mock mode, no hardware required):
   ros2 launch jetbot_base bringup.launch.py mock_mode:=true \
@@ -33,6 +43,9 @@ def generate_launch_description():
     twist_mux_config = os.path.join(
         get_package_share_directory('jetbot_base'), 'config', 'twist_mux.yaml'
     )
+    ekf_config = os.path.join(
+        get_package_share_directory('jetbot_base'), 'config', 'ekf.yaml'
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument('mock_mode', default_value='true',
@@ -46,7 +59,15 @@ def generate_launch_description():
             package='jetbot_base',
             executable='motor_driver',
             name='jetbot_motor_driver',
-            parameters=[{'use_mock': mock_mode}],
+            parameters=[{'use_mock': mock_mode, 'publish_tf': False}],
+            output='screen',
+        ),
+
+        Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_filter_node',
+            parameters=[ekf_config],
             output='screen',
         ),
 

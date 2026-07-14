@@ -8,42 +8,52 @@ A Waveshare JetBot (Jetson Nano 4GB) driven by natural-language instructions: a 
 
 ```mermaid
 flowchart TB
-    subgraph SERVER["GPU server (Kyogin) — future"]
-        VLA["VLA / navigation server<br/>(today: simulation/mock_vla_server.py)"]
+    subgraph SERVER["GPU server — future"]
+        VLASRV["VLA / navigation server<br/>(today: simulation/mock_vla_server.py)"]
     end
 
     subgraph JETSON["Jetson Nano — reactive control"]
         CAM["camera_node /<br/>mock_camera_publisher<br/>(jetbot_vision)"]
+        YOLO["yolo_detector /<br/>mock_detection_publisher<br/>(jetbot_vision)"]
+        PROJ["ground_plane_projector<br/>(jetbot_nav)"]
+        NAV2["Nav2 stack<br/>controller/planner/behavior<br/>(jetbot_nav, via nav2_bringup)"]
         LIDAR["mock_lidar_publisher<br/>(real LiDAR driver: not built yet)<br/>(jetbot_governor)"]
         BRIDGE["vla_client_bridge<br/>(jetbot_vla_bridge)"]
         GOV["predictive_governor<br/>safety veto<br/>(jetbot_governor)"]
+        ARB["mode_arbiter<br/>traditional vs VLA<br/>(jetbot_nav)"]
         MUX["twist_mux"]
         MOTOR["motor_driver<br/>(jetbot_base)"]
+        EKF["ekf_filter_node<br/>(robot_localization)"]
         RSP["robot_state_publisher<br/>(jetbot_description)"]
         SLAM["rtabmap<br/>(jetbot_slam)"]
         JOY["teleop_twist_keyboard<br/>(stock package, run manually)"]
-        YOLO["yolo_detector<br/>NOT WIRED IN<br/>(jetbot_vision)"]
     end
 
     CAM -->|"camera/image_raw"| BRIDGE
     CAM -->|"camera/image_raw<br/>camera/camera_info"| SLAM
-    BRIDGE -->|"HTTP POST /predict"| VLA
-    VLA -->|"action tokens"| BRIDGE
+    CAM -->|"camera/image_raw"| YOLO
+    CAM -->|"camera/camera_info"| PROJ
+    YOLO -->|"detections"| PROJ
+    PROJ -->|"obstacles/points"| NAV2
+    NAV2 -->|"cmd_vel_nav"| ARB
+    BRIDGE -->|"HTTP POST /predict"| VLASRV
+    VLASRV -->|"action tokens"| BRIDGE
     BRIDGE -->|"/cmd_vel_vla"| GOV
     LIDAR -->|"/scan"| GOV
-    GOV -->|"/cmd_vel_final (priority 10)"| MUX
-    JOY -->|"/cmd_vel_joy (priority 50)"| MUX
+    GOV -->|"/cmd_vel_final"| ARB
+    ARB -->|"cmd_vel_autonomous (priority 10)"| MUX
+    JOY -->|"cmd_vel_joy (priority 50)"| MUX
     MUX -->|"cmd_vel_mux"| MOTOR
-    MOTOR -->|"/odom +<br/>odom→base_footprint TF"| SLAM
-    RSP -->|"base_footprint→camera_link TF<br/>(static, from URDF)"| SLAM
-    CAM -.-> YOLO
-    YOLO -.->|"cmd_vel (unwired — see jetbot_vision README)"| MUX
+    MOTOR -->|"/odom"| EKF
+    EKF -->|"/odometry/filtered +<br/>odom→base_footprint TF"| SLAM
+    RSP -->|"base_footprint→...→<br/>camera_optical_frame TF (static)"| SLAM
+    RSP -.->|"static TF"| PROJ
 ```
 
 Notes on the diagram:
-- **`twist_mux` priority** (higher number wins): `cmd_vel_safety` (90, reserved — nothing publishes here yet) > `cmd_vel_joy` (50) > `cmd_vel_final` (10, the VLA path). See `ros_ws/src/jetbot_base/config/twist_mux.yaml`.
-- **`yolo_detector`** publishes to plain `cmd_vel`, which isn't a `twist_mux` input — it's dead code today, shown dashed above. See `jetbot_vision`'s README before relying on it.
-- **`jetbot_slam`** does visual localization/loop-closure only (monocular camera, no depth) — not an obstacle-aware map for Nav2. See `jetbot_slam`'s README for why.
+- **`twist_mux` priority** (higher number wins): `cmd_vel_safety` (90, reserved — nothing publishes here yet) > `cmd_vel_joy` (50) > `cmd_vel_autonomous` (10). See `ros_ws/src/jetbot_base/config/twist_mux.yaml`.
+- **`mode_arbiter`** picks exactly one of {Nav2, VLA} to actually reach `cmd_vel_autonomous` — the operator (not `twist_mux`) decides which pipeline drives the robot when the joystick is idle. See `jetbot_nav`'s README for why this can't just be a `twist_mux` lock.
+- **`jetbot_slam`** does visual localization/loop-closure only (monocular camera, no depth) — not an obstacle-aware map for Nav2. Nav2's costmaps instead consume `ground_plane_projector`'s camera-derived obstacle points directly. See `jetbot_slam`'s and `jetbot_nav`'s READMEs for why.
 
 ## Repo layout
 
@@ -54,6 +64,7 @@ Notes on the diagram:
 │   ├── jetbot_vision/       camera capture, mock camera, YOLO detector
 │   ├── jetbot_governor/     LiDAR safety veto ("the WAM layer"), mock LiDAR
 │   ├── jetbot_vla_bridge/   VLA server client
+│   ├── jetbot_nav/          Nav2 + camera-fed costmap + traditional-vs-VLA mode arbiter
 │   ├── jetbot_slam/         RTAB-Map monocular SLAM launch/config
 │   └── jetbot_description/  URDF + RViz visualization
 ├── simulation/
@@ -84,7 +95,10 @@ sudo apt install ros-humble-desktop python3-colcon-common-extensions
 sudo apt install -y \
   ros-humble-twist-mux \
   ros-humble-rtabmap-ros \
-  ros-humble-camera-info-manager-py
+  ros-humble-camera-info-manager-py \
+  ros-humble-nav2-bringup \
+  ros-humble-vision-msgs \
+  ros-humble-robot-localization
 
 # Clone and build
 git clone https://github.com/DeveshwarH1996/jetbot_VLA_ROS_Humble.git
@@ -134,11 +148,21 @@ ros2 launch jetbot_slam slam.launch.py
 ros2 param set /mock_lidar_publisher front_distance 0.2
 ```
 
+**7. (Optional) Run the traditional (Nav2) pipeline** — needs `robot_state_publisher` (step 4) and the bringup pipeline (step 2) already running:
+```bash
+ros2 launch jetbot_nav nav.launch.py mock_mode:=true
+```
+This starts a synthetic detection (no `ultralytics`/camera needed), projects it onto the ground plane as a costmap obstacle, and brings up the full Nav2 stack. `mode_arbiter` starts in `'traditional'` mode by default — switch to the VLA instead with:
+```bash
+ros2 param set /mode_arbiter mode vla
+```
+Either way, the joystick (step 3) still always overrides whichever autonomous mode is selected.
+
 ## Testing
 
 ```bash
 cd ros_ws
-colcon test --packages-select jetbot_governor jetbot_base jetbot_vision jetbot_vla_bridge
+colcon test --packages-select jetbot_governor jetbot_base jetbot_vision jetbot_vla_bridge jetbot_nav
 ```
 
 `jetbot_governor`'s `test_predictive_governor.py` is the one package with real behavioral unit tests (front-arc distance logic, edge cases). The rest of the suite is ROS2's standard `ament_flake8`/`ament_pep257`/`ament_copyright` lint boilerplate — there's a known backlog of docstring-style lint findings across most files (pre-existing, not functional bugs); not yet cleaned up.
@@ -147,11 +171,13 @@ colcon test --packages-select jetbot_governor jetbot_base jetbot_vision jetbot_v
 
 ## Known gaps / what's not done
 
-- **No real LiDAR driver package** — `mock_lidar_publisher` only. This blocks any real Nav2 costmap (needs a real obstacle source).
+- **No real LiDAR driver package** — `mock_lidar_publisher` only, still feeding `predictive_governor`. Deliberately out of scope for now: `jetbot_nav`'s costmap runs off the camera (`ground_plane_projector`) as the primary obstacle source, with real LiDAR planned as separate future integration work once the hardware is on the robot.
 - **Jetson Nano not yet flashed/configured** — everything above has only been run on a dev workstation against mocks.
-- **No wheel encoders** on the Waveshare kit — `/odom` is open-loop dead-reckoning only (see `jetbot_base`'s README).
-- **No Nav2 configuration** — the Nav2 packages are installed (pulled in as `rtabmap-ros` dependencies) but nothing in this repo configures them yet.
+- **No wheel encoders** on the Waveshare kit — `/odom` is open-loop dead-reckoning only (see `jetbot_base`'s README), fused through `robot_localization` but not made accurate by it.
+- **`jetbot_nav`'s ground-plane obstacle projection** only sees objects touching the floor in view, and is meaningfully less accurate than real depth/LiDAR — a legitimate bridge technique, not a permanent substitute (see `jetbot_nav`'s README).
+- **No static map / AMCL** — Nav2 runs costmap-only (rolling window off live camera obstacles), since `jetbot_slam`'s monocular RTAB-Map doesn't produce an occupancy grid. Add `map_server`/`amcl` once a real occupancy-grid source exists.
 - **No real VLA/navigation model deployed** — only the random-token mock server. `brain_research_report.md`'s recommendation is to start with ViNT/NoMaD (navigation-specific), not a manipulation-focused VLA like OpenVLA.
-- **`yolo_detector`** needs `ultralytics` + an exported TensorRT engine (neither ships in-repo), and isn't wired into `twist_mux` even when it does run.
+- **`yolo_detector`** needs `ultralytics` + an exported TensorRT engine (neither ships in-repo) to run for real; `mock_detection_publisher` covers testing the rest of the pipeline without either.
+- **Nav2 footprint/velocity params are hand-matched, not enforced** — `jetbot_nav/config/nav2_params.yaml`'s footprint and velocity limits are kept in sync with the URDF and `motor_driver` manually; nothing checks they still agree if either changes.
 - **No LICENSE file** at the repo root (individual packages declare MIT internally).
-- Isaac Sim: blocked on GPU hardware (needs an RTX-class GPU; see `isaac_sim_setup.md` and the Kyogin hardware notes in `brain_research_report.md`), and `simulate_jetbot.py`'s ROS2 bridge wiring is still a non-functional stub.
+- Isaac Sim: blocked on GPU hardware (needs an RTX-class GPU; see `isaac_sim_setup.md` and the GPU server hardware notes in `brain_research_report.md`), and `simulate_jetbot.py`'s ROS2 bridge wiring is still a non-functional stub.

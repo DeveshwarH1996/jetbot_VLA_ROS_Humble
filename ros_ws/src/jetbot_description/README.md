@@ -4,7 +4,9 @@ URDF and RViz visualization for the JetBot. No custom nodes — `ament_cmake` pa
 
 ## `urdf/jetbot.urdf`
 
-Simple-geometry model (boxes/cylinders, no meshes): `base_footprint` → `chassis` → `left_wheel` / `right_wheel` / `camera_link`. Dimensions are illustrative placeholders (10cm chassis box, 3cm wheel radius), not measured from a real kit — if you have real dimensions, update this before trusting any Nav2 footprint config derived from it.
+Simple-geometry model (boxes/cylinders, no meshes): `base_footprint` → `chassis` → `left_wheel` / `right_wheel` / `camera_link` → `camera_optical_frame`. Dimensions are illustrative placeholders (10cm chassis box, 3cm wheel radius), not measured from a real kit — if you have real dimensions, update this before trusting any Nav2 footprint config derived from it (`jetbot_nav`'s `nav2_params.yaml` footprint is currently matched to these placeholders).
+
+`camera_optical_frame` is a fixed child of `camera_link` applying the standard REP103→optical-convention rotation (`camera_link` is X-forward/Y-left/Z-up like the rest of the robot; image/pixel math needs X-right/Y-down/Z-forward-into-scene). `jetbot_vision`'s camera nodes stamp images with this frame, and `jetbot_nav`'s `ground_plane_projector` looks the transform up via TF rather than hardcoding the camera's mount angle — if the camera is ever remounted, only this URDF needs to change.
 
 ## `launch/display.launch.py`
 
