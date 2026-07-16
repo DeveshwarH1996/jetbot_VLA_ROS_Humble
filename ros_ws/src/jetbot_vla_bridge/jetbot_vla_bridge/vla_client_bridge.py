@@ -12,7 +12,8 @@ class VLAClientBridge(Node):
     Bridge node that captures camera frames and sends them to a remote VLA
     server. Maps discrete VLA action tokens to continuous ROS2 Twist
     messages. Output is a raw, unvalidated proposal - predictive_governor
-    is responsible for safety-checking it before it reaches twist_mux.
+    is responsible for safety-checking it before it reaches motor_driver
+    (as the 'vla' mode input, selected by joy_controller - no mux node).
     """
     def __init__(self):
         super().__init__('vla_client_bridge')
@@ -44,12 +45,13 @@ class VLAClientBridge(Node):
         self.sub = self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
 
         # VLA inference is slow (server round-trip), so it runs on its own
-        # timer. Downstream consumers (predictive_governor -> twist_mux ->
-        # motor_driver's heartbeat watchdog) all expect a steady stream of
-        # commands though, so a separate faster timer republishes the last
-        # decision - decoupling "how often the VLA re-plans" from "how often
-        # we publish a command". If no fresh decision has arrived within
-        # command_max_age, we publish zero instead of a stale command.
+        # timer. Downstream consumers (predictive_governor -> motor_driver,
+        # which stops if its selected source or joy_controller's mode goes
+        # stale) all expect a steady stream of commands though, so a
+        # separate faster timer republishes the last decision - decoupling
+        # "how often the VLA re-plans" from "how often we publish a
+        # command". If no fresh decision has arrived within command_max_age,
+        # we publish zero instead of a stale command.
         self.inference_timer = self.create_timer(self.inference_interval, self.inference_loop)
         self.publish_timer = self.create_timer(self.publish_interval, self.publish_loop)
 

@@ -28,7 +28,9 @@ class PredictiveGovernor(Node):
     """
     Safety middleware (the WAM layer).
     Validates VLA proposals against real-time LiDAR data before they reach
-    twist_mux. Fails safe (stop) whenever it cannot prove the move is safe.
+    motor_driver (as the 'vla' mode input, selected by joy_controller - no
+    mux/arbiter node). Fails safe (stop) whenever it cannot prove the move
+    is safe.
     """
     def __init__(self):
         super().__init__('predictive_governor')
@@ -48,8 +50,8 @@ class PredictiveGovernor(Node):
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         self.vla_sub = self.create_subscription(Twist, '/cmd_vel_vla', self.vla_callback, 10)
 
-        # Publishes the safety-checked command; this feeds twist_mux as the
-        # lowest-priority (autonomous) input.
+        # Publishes the safety-checked command; motor_driver follows this
+        # directly whenever joy_controller's mode is 'vla' - no mux node.
         self.pub = self.create_publisher(Twist, '/cmd_vel_final', 10)
 
         self.get_logger().info(

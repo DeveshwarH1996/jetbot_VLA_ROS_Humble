@@ -47,7 +47,7 @@ Drives the physical (or mock) motors, and is now the arbiter too — no separate
 | Topic | Type | Notes |
 |---|---|---|
 | `odom` | `nav_msgs/Odometry` | Open-loop dead-reckoning (see caveat below), 20Hz default. |
-| `odom` → `base_footprint` TF | — | Only if `publish_tf:=true`. In `bringup.launch.py` this is set `false` — `robot_localization`'s EKF owns that TF edge instead (see below); only one node should ever broadcast a given transform. |
+| `odom` → `base_footprint` TF | — | Only if `publish_tf:=true`. In `bringup.launch.py` this is set `false` — `robot_localization`'s EKF owns that TF edge instead (see below); only one node should ever broadcast a given transform. Note: `motor_driver` creates its `TransformBroadcaster` unconditionally, so `ros2 node info /jetbot_motor_driver` still lists `/tf` as a publisher endpoint even with `publish_tf:=false` — check the live `publish_tf` param (`ros2 param get`), not the publisher list, to see who's actually sending. |
 
 **Parameters** — `wheel_base`/`max_linear_vel`/`max_angular_vel` come from the shared `config/robot_params.yaml`; the rest are `motor_driver`-specific
 | Name | Default | Source | Meaning |

@@ -17,7 +17,7 @@ ros2 launch jetbot_slam slam.launch.py
 
 **Prerequisites this launch file does *not* start itself** (a real gap discovered while testing this — RTAB-Map fails per-frame without them, with an unhelpful TF error):
 1. `jetbot_description`'s `robot_state_publisher` (with the URDF loaded) — provides the static `base_footprint → chassis → camera_link` TF chain.
-2. `jetbot_base`'s `motor_driver` — provides `/odom` and the `odom → base_footprint` TF.
+2. `jetbot_base`'s `bringup.launch.py` — provides `/odom` (from `motor_driver`) and the `odom → base_footprint` TF. That TF edge is published by `robot_localization`'s `ekf_node`, not `motor_driver` directly — `motor_driver`'s own `publish_tf` param is set `false` in `bringup.launch.py` so there's exactly one writer for the edge (see `jetbot_base`'s README). RTAB-Map only cares that the edge exists via TF, not who publishes it.
 3. A camera node (`jetbot_vision`'s `camera_node` or `mock_camera_publisher`) — provides `camera/image_raw` + `camera/camera_info`.
 
 **Arguments**: `database_path` (default `~/.ros/jetbot_slam.db`), `localization` (`false` = build a new map, `true` = localize against the existing database).
@@ -28,4 +28,4 @@ Two mistakes from an earlier pass, kept here as a warning since they don't error
 - The depth toggle is `depth`, **not** `subscribe_depth`.
 - `subscribe_rgb` defaults to whatever `depth` is set to — setting `depth:=false` without also setting `subscribe_rgb:=true` means nothing subscribes to the camera at all.
 
-Verified end-to-end (mock camera + motor_driver odometry + robot_state_publisher + rtabmap, all four running together): RTAB-Map processes frames continuously with no errors, and the full TF chain `map → odom → base_footprint → chassis → camera_link` resolves with geometry matching the URDF exactly.
+Verified end-to-end (mock camera + `bringup.launch.py` + `robot_state_publisher` + rtabmap, all running together): RTAB-Map processes frames continuously with no errors, and the full TF chain `map → odom → base_footprint → chassis → camera_link` resolves. Re-checked after the `robot_localization` EKF consolidation (which moved `odom → base_footprint` off `motor_driver` and onto `ekf_filter_node`, see `jetbot_base`'s README) specifically to confirm RTAB-Map doesn't care which node publishes that edge, only that it exists on TF — confirmed via `ros2 node info /jetbot_motor_driver` (no live `/tf` traffic, `publish_tf` param is `false`) vs `/ekf_filter_node` (actively broadcasting) while the chain above still resolved correctly.

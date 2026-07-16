@@ -1,6 +1,6 @@
 # jetbot_vla_bridge
 
-The "System 2" client: sends camera frames + a task string to a remote VLA server and turns its response into velocity proposals. Its output is unvalidated — `jetbot_governor` safety-checks it before it reaches `twist_mux`.
+The "System 2" client: sends camera frames + a task string to a remote VLA server and turns its response into velocity proposals. Its output is unvalidated — `jetbot_governor` safety-checks it before it reaches `jetbot_base`'s `motor_driver` (as the `vla` mode input; there's no separate mux/arbiter node — see `jetbot_base`'s README).
 
 ## Nodes
 

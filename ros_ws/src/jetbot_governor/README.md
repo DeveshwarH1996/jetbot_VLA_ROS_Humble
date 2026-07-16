@@ -15,7 +15,7 @@ The safety layer between the VLA bridge and the rest of the control stack — ve
 **Publishes**
 | Topic | Type | Notes |
 |---|---|---|
-| `/cmd_vel_final` | `geometry_msgs/Twist` | Safety-checked result. Feeds `jetbot_nav`'s `mode_arbiter` as the "VLA" option (the operator/joystick selects whether this or the traditional Nav2 planner actually reaches `twist_mux` — see `jetbot_nav`'s README) — this node does **not** talk to the motors directly. |
+| `/cmd_vel_final` | `geometry_msgs/Twist` | Safety-checked result. One of `jetbot_base`'s `motor_driver`'s three arbitrated input sources — followed only when `joy_controller`'s mode is `vla` (no separate mux/arbiter node; see `jetbot_base`'s README for the full arbitration + fail-safe design) — this node does **not** talk to the motors directly. |
 
 **Parameters**
 | Name | Default | Meaning |

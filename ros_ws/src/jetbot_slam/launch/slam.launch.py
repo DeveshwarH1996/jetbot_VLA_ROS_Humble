@@ -21,11 +21,12 @@ PREREQUISITES this launch file does NOT start itself:
     already be running, so the static base_footprint->chassis->camera_link
     TF chain exists. Without it, rtabmap fails per-frame with "camera_link
     passed to lookupTransform ... does not exist".
-  - jetbot_base's motor_driver must be running (publishes /odom and
-    broadcasts odom->base_footprint TF).
+  - jetbot_base's bringup.launch.py must be running: motor_driver publishes
+    /odom, and robot_localization's ekf_node (not motor_driver directly -
+    motor_driver's publish_tf is false in bringup.launch.py) broadcasts the
+    odom->base_footprint TF that rtabmap actually looks up.
   - A camera node (real camera_node or jetbot_vision's mock_camera_publisher)
     must be publishing camera/image_raw + camera/camera_info.
-Verified end-to-end against the mock camera + motor_driver + robot_state_publisher.
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
